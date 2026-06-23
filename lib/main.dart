@@ -5,6 +5,7 @@ import 'firebase_options.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import 'screens/auth_gate.dart';
+import 'services/sleep_timer_service.dart';
 
 import 'screens/auth_screen.dart';
 import 'screens/MainScreen.dart';
@@ -15,6 +16,8 @@ void main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  await SleepTimerService.instance.ensureInitialized();
 
   runApp(const MyApp());
 }

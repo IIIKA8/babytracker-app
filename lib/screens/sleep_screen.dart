@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 
 import '../models/sleep_record.dart';
+import '../services/sleep_timer_service.dart';
 
 class SleepScreen extends StatefulWidget {
   final String childId;
@@ -24,15 +25,29 @@ class _SleepScreenState extends State<SleepScreen> {
   List<SleepRecord> filteredRecords = [];
 
   StreamSubscription? sub;
+  StreamSubscription? durationSub;
 
-  Timer? timer;
-  DateTime? startTime;
+  final _sleepTimer = SleepTimerService.instance;
   Duration currentDuration = Duration.zero;
-  bool isRunning = false;
+
+  bool get isRunning => _sleepTimer.isRunningFor(widget.childId);
 
   @override
   void initState() {
     super.initState();
+    _sleepTimer.ensureInitialized().then((_) {
+      if (!mounted) return;
+      setState(() {
+        currentDuration = _sleepTimer.isRunningFor(widget.childId)
+            ? _sleepTimer.currentDuration
+            : Duration.zero;
+      });
+    });
+    durationSub = _sleepTimer.durationStream.listen((duration) {
+      if (!_sleepTimer.isRunningFor(widget.childId)) return;
+      if (!mounted) return;
+      setState(() => currentDuration = duration);
+    });
     listenRecords();
   }
 
@@ -79,21 +94,17 @@ class _SleepScreenState extends State<SleepScreen> {
 
   void startTimer() {
     if (isRunning) return;
-
-    startTime = DateTime.now();
-    isRunning = true;
-
-    timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      setState(() {
-        currentDuration = DateTime.now().difference(startTime!);
-      });
+    _sleepTimer.start(widget.childId);
+    setState(() {
+      currentDuration = Duration.zero;
     });
   }
 
   Future<void> stopTimer() async {
-    if (!isRunning || startTime == null) return;
+    if (!isRunning) return;
 
-    timer?.cancel();
+    final started = await _sleepTimer.stop();
+    if (started == null || user == null) return;
 
     final end = DateTime.now();
 
@@ -104,17 +115,14 @@ class _SleepScreenState extends State<SleepScreen> {
         .doc(widget.childId)
         .collection('sleep')
         .add({
-      'startTime': startTime!.millisecondsSinceEpoch,
+      'startTime': started.millisecondsSinceEpoch,
       'endTime': end.millisecondsSinceEpoch,
       'date': currentDate.toIso8601String(),
     });
 
-    setState(() {
-      isRunning = false;
-      startTime = null;
-      currentDuration = Duration.zero;
-    });
+    if (!mounted) return;
 
+    setState(() => currentDuration = Duration.zero);
     filterByDate();
   }
 
@@ -363,7 +371,7 @@ class _SleepScreenState extends State<SleepScreen> {
 
   @override
   void dispose() {
-    timer?.cancel();
+    durationSub?.cancel();
     sub?.cancel();
     super.dispose();
   }
