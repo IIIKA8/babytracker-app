@@ -30,7 +30,7 @@ class _MainScreenState extends State<MainScreen> {
   StreamSubscription? timerSub;
 
   final ValueNotifier<String> timerNotifier =
-  ValueNotifier("00:00:00");
+  ValueNotifier("∞");
 
   final List<String> tracks = [
     "assets/audio/white.mp3",
@@ -59,6 +59,38 @@ class _MainScreenState extends State<MainScreen> {
     loadChild();
     audioService.init();
     audioService.prepare(selectedTrack);
+    timerSub = audioService.timerStream.listen(_onTimerTick);
+  }
+
+  void _onTimerTick(Duration remaining) {
+    if (selectedTimer == null) {
+      timerNotifier.value = '∞';
+      return;
+    }
+
+    final h = remaining.inHours.toString().padLeft(2, '0');
+    final m = (remaining.inMinutes % 60).toString().padLeft(2, '0');
+    final s = (remaining.inSeconds % 60).toString().padLeft(2, '0');
+    timerNotifier.value = '$h:$m:$s';
+
+    if (remaining.inSeconds <= 0 && isPlaying) {
+      _stopPlayback(resetTimer: true);
+    }
+  }
+
+  Future<void> _stopPlayback({bool resetTimer = false}) async {
+    await audioService.pause();
+    audioService.pauseCountdown();
+
+    if (resetTimer && selectedTimer != null) {
+      audioService.setTimerDuration(selectedTimer);
+    }
+
+    if (!mounted) return;
+    setState(() {
+      isPlaying = false;
+      audioLoading = false;
+    });
   }
 
   // ================= CHILD =================
@@ -167,11 +199,9 @@ class _MainScreenState extends State<MainScreen> {
   // ================= AUDIO =================
 
   Future<void> toggleMusic() async {
-    // Allow stop/cancel even while loading
     if (audioLoading) {
       await audioService.stop();
-      audioService.stopTimer();
-      timerSub?.cancel();
+      audioService.pauseCountdown();
 
       if (!mounted) return;
 
@@ -183,15 +213,7 @@ class _MainScreenState extends State<MainScreen> {
     }
 
     if (isPlaying) {
-      await audioService.stop();
-      audioService.stopTimer();
-      timerSub?.cancel();
-
-      if (!mounted) return;
-
-      setState(() {
-        isPlaying = false;
-      });
+      await _stopPlayback();
       return;
     }
 
@@ -204,15 +226,18 @@ class _MainScreenState extends State<MainScreen> {
       await audioService.play(selectedTrack);
 
       if (selectedTimer != null) {
-        startTimer(selectedTimer!);
+        if (audioService.remaining == null ||
+            audioService.remaining!.inSeconds <= 0) {
+          audioService.setTimerDuration(selectedTimer);
+        }
+        audioService.startCountdown();
+      } else {
+        timerNotifier.value = '∞';
       }
 
       if (!mounted) return;
 
-      setState(() {
-        isPlaying = true;
-        audioLoading = false;
-      });
+      setState(() => audioLoading = false);
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -250,67 +275,19 @@ class _MainScreenState extends State<MainScreen> {
     }
   }
 
-  void startTimer(Duration duration) {
-
-    timerSub?.cancel();
-
-    audioService.startTimer(duration);
-
-    timerSub = audioService.timerStream.listen((remaining) async {
-
-      final h =
-      remaining.inHours.toString().padLeft(2, '0');
-
-      final m =
-      (remaining.inMinutes % 60)
-          .toString()
-          .padLeft(2, '0');
-
-      final s =
-      (remaining.inSeconds % 60)
-          .toString()
-          .padLeft(2, '0');
-
-      timerNotifier.value = "$h:$m:$s";
-
-      if (remaining.inSeconds <= 0) {
-
-        await audioService.stop();
-
-        if (!mounted) return;
-
-        setState(() {
-          isPlaying = false;
-        });
-      }
-    });
-  }
-
   Future<void> selectTimer(Duration? duration) async {
-
     selectedTimer = duration;
 
     if (duration == null) {
-
-      timerNotifier.value = "∞";
-
       audioService.stopTimer();
-
+      timerNotifier.value = '∞';
       return;
     }
 
-    final h =
-    duration.inHours.toString().padLeft(2, '0');
-
-    final m =
-    (duration.inMinutes % 60)
-        .toString()
-        .padLeft(2, '0');
-
-    timerNotifier.value = "$h:$m:00";
+    audioService.setTimerDuration(duration);
 
     if (isPlaying) {
-      startTimer(duration);
+      audioService.startCountdown();
     }
   }
 

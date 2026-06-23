@@ -14,8 +14,11 @@ class AudioService {
   String? _loadedPath;
   bool _initialized = false;
   int _op = 0;
+  Duration? _remaining;
 
   Stream<bool> get playingStream => player.playingStream;
+
+  Duration? get remaining => _remaining;
 
   bool get isLoading {
     final state = player.processingState;
@@ -54,36 +57,62 @@ class AudioService {
     await player.play();
   }
 
+  Future<void> pause() async {
+    ++_op;
+    try {
+      await player.pause();
+    } catch (_) {}
+  }
+
   Future<void> stop() async {
-    ++_op; // cancel any in-flight prepare/play
+    ++_op;
     try {
       await player.pause();
       await player.seek(Duration.zero);
     } catch (_) {}
   }
 
-  void startTimer(Duration duration) {
-    stopTimer();
+  void setTimerDuration(Duration? duration) {
+    _remaining = duration == null ? null : duration;
+    if (duration != null) {
+      _emit();
+    }
+  }
 
-    var remaining = duration;
-    _timerController.add(remaining);
+  void startCountdown() {
+    if (_remaining == null) return;
+    _tick();
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) => _tick());
+  }
 
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      remaining -= const Duration(seconds: 1);
+  void pauseCountdown() {
+    _timer?.cancel();
+    _timer = null;
+  }
 
-      if (remaining.inSeconds <= 0) {
-        _timerController.add(Duration.zero);
-        stopTimer();
-        return;
-      }
+  void _tick() {
+    if (_remaining == null) return;
 
-      _timerController.add(remaining);
-    });
+    if (_remaining!.inSeconds <= 0) {
+      _remaining = Duration.zero;
+      _emit();
+      pauseCountdown();
+      return;
+    }
+
+    _emit();
+    _remaining = _remaining! - const Duration(seconds: 1);
+  }
+
+  void _emit() {
+    if (_timerController.isClosed) return;
+    _timerController.add(_remaining ?? Duration.zero);
   }
 
   void stopTimer() {
-    _timer?.cancel();
-    _timer = null;
+    pauseCountdown();
+    _remaining = null;
   }
 
   Future<void> dispose() async {
