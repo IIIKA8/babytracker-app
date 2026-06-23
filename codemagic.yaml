@@ -1,0 +1,49 @@
+# Бесплатная установка без $99 Apple: см. .github/workflows/ios-unsigned-sideload.yml → артефакт → Sideloadly.
+#
+# IPA под Ad Hoc (ниже): нужен платный Apple Developer Program.
+# Нужны: платная подписка Apple Developer Program, App Store Connect API Key в Codemagic,
+# замените YOUR_APP_STORE_CONNECT_INTEGRATION_NAME на имя интеграции из Team settings → Integrations.
+#
+# Sideloadly / AltStore: часто переподписывают IPA вашим бесплатным Apple ID (срок ~7 дней).
+# Ad Hoc IPA от CI уже подписан вашим сертификатом — ставится на зарегистрированные UDID
+# (Finder, Apple Configurator, или иногда тот же Sideloadly «как есть»).
+#
+# Перед сборкой: developer.apple.com → Devices → добавьте UDID телефона;
+# Profiles → Ad Hoc профиль для вашего Bundle ID с этими устройствами (или дайте Codemagic
+# создать профиль через интеграцию, если так настроено в аккаунте).
+
+workflows:
+  ios-ipa-adhoc:
+    name: Flutter iOS IPA (Ad Hoc)
+    # Не запускать на каждый push, пока не настроена интеграция App Store Connect в Codemagic.
+    triggering:
+      events: []
+    instance_type: mac_mini_m2
+    max_build_duration: 120
+    integrations:
+      app_store_connect: YOUR_APP_STORE_CONNECT_INTEGRATION_NAME
+    environment:
+      ios_signing:
+        distribution_type: ad_hoc
+        bundle_identifier: com.example.ios
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+    scripts:
+      - name: Git LFS (аудио в assets)
+        script: git lfs pull
+      - name: Настройка подписи в Xcode-проекте
+        script: |
+          xcode-project use-profiles
+      - name: Зависимости Flutter
+        script: |
+          flutter pub get
+      - name: CocoaPods
+        script: |
+          find . -name "Podfile" -execdir pod install \;
+      - name: Сборка подписанного IPA (Ad Hoc)
+        script: |
+          flutter build ipa --release \
+            --export-options-plist=/Users/builder/export_options.plist
+    artifacts:
+      - build/ios/ipa/*.ipa

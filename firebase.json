@@ -1,0 +1,28 @@
+{
+  "hosting": {
+    "public": "build/web",
+    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+    "rewrites": [{"source": "**", "destination": "/index.html"}]
+  },
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "babytracker-9474d",
+          "appId": "1:846702660282:android:dd03c9c21151df92559083",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "babytracker-9474d",
+          "configurations": {
+            "android": "1:846702660282:android:dd03c9c21151df92559083",
+            "ios": "1:846702660282:ios:790cd5bdbb59f496559083",
+            "web": "1:846702660282:web:748659e11547d28a559083"
+          }
+        }
+      }
+    }
+  }
+}

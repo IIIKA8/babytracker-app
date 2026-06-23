@@ -1,0 +1,57 @@
+# Бесплатная схема: CI собирает IPA без подписи Apple Developer ($0).
+# Вы скачиваете артефакт и в Sideloadly (Windows/Mac) подписываете своим бесплатным Apple ID
+# и ставите на iPhone по USB. Сертификат Apple ~7 дней, потом повторная установка.
+#
+# Репозиторий лучше public — на free GitHub больше минут macOS. Private: лимит минут.
+name: iOS unsigned IPA (Sideloadly)
+
+on:
+  workflow_dispatch:
+  # push отключён: IPA ~450 МБ быстро забивает лимит артефактов GitHub Actions.
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: CocoaPods
+        run: gem install cocoapods --no-document
+
+      - name: Dependencies
+        run: |
+          flutter pub get
+          cd ios && pod install
+
+      - name: Build iOS (no codesign)
+        run: flutter build ios --release --no-codesign
+
+      - name: Pack IPA (Payload для Sideloadly)
+        run: |
+          if [ -d "build/ios/iphoneos/Runner.app" ]; then
+            SRC="build/ios/iphoneos/Runner.app"
+          elif [ -d "build/ios/Release-iphoneos/Runner.app" ]; then
+            SRC="build/ios/Release-iphoneos/Runner.app"
+          else
+            echo "Runner.app not found"; find build/ios -name "Runner.app" 2>/dev/null || true; exit 1
+          fi
+          mkdir -p build/ios/out/Payload
+          cp -R "$SRC" build/ios/out/Payload/
+          cd build/ios/out
+          zip -q -r "${GITHUB_WORKSPACE}/Runner_unsigned.ipa" Payload
+          ls -la "${GITHUB_WORKSPACE}/Runner_unsigned.ipa"
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: Runner_unsigned_ipa
+          path: Runner_unsigned.ipa
+          retention-days: 14

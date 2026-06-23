@@ -1,0 +1,54 @@
+# Публикует Flutter Web на GitHub Pages после пуша в main.
+# ВАЖНО: на бесплатном плане Pages работает только для ПУБЛИЧНОГО репозитория.
+# Для приватного репо используйте deploy-firebase-hosting.yml.
+# Обязательно: Settings → Pages → Build and deployment → Source: «GitHub Actions».
+# Ссылка после деплоя: https://<ваш-логин>.github.io/<имя-репозитория>/
+name: Deploy Web to GitHub Pages
+
+on:
+  # Приватный репо + лимит артефактов: только вручную, когда репо публичный.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages-deploy
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Build web
+        run: |
+          flutter pub get
+          REPO="${GITHUB_REPOSITORY#*/}"
+          flutter build web --release --base-href="/${REPO}/" --no-wasm-dry-run
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: build/web
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

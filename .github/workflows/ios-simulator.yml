@@ -1,0 +1,41 @@
+# Проверка, что проект собирается под iOS Simulator (macOS-раннер GitHub).
+# Это НЕ устанавливает приложение на «эмулятор в браузере» — CI только компилирует.
+# Интерактивно посмотреть UI: Mac + Simulator локально: flutter run -d ios
+name: iOS Simulator build
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ios-sim-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout (с Git LFS для assets/audio)
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: CocoaPods
+        run: gem install cocoapods --no-document
+
+      - name: pub get
+        run: flutter pub get
+
+      - name: pod install
+        working-directory: ios
+        run: pod install
+
+      - name: Build for Simulator
+        run: flutter build ios --simulator --debug --no-codesign
