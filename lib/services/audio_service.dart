@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:just_audio/just_audio.dart';
 
+import 'sleep_timer_visibility.dart';
+
 class AudioService {
   final AudioPlayer player = AudioPlayer();
 
@@ -10,15 +12,20 @@ class AudioService {
 
   Stream<Duration> get timerStream => _timerController.stream;
 
-  Timer? _timer;
   String? _loadedPath;
   bool _initialized = false;
   int _op = 0;
+
   Duration? _remaining;
+  DateTime? _endsAt;
+  int _countdownGen = 0;
+  bool _visibilityHooked = false;
 
   Stream<bool> get playingStream => player.playingStream;
 
   Duration? get remaining => _remaining;
+
+  bool get isCountdownActive => _endsAt != null;
 
   bool get isLoading {
     final state = player.processingState;
@@ -30,6 +37,13 @@ class AudioService {
     if (_initialized) return;
     await player.setLoopMode(LoopMode.one);
     _initialized = true;
+    _hookVisibility();
+  }
+
+  void _hookVisibility() {
+    if (_visibilityHooked) return;
+    _visibilityHooked = true;
+    registerSleepVisibilityCallback(_syncFromClock);
   }
 
   Future<void> prepare(String path) async {
@@ -73,36 +87,50 @@ class AudioService {
   }
 
   void setTimerDuration(Duration? duration) {
-    _remaining = duration == null ? null : duration;
+    pauseCountdown();
+    _remaining = duration;
     if (duration != null) {
       _emit();
     }
   }
 
   void startCountdown() {
-    if (_remaining == null) return;
-    _tick();
-    _timer?.cancel();
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) => _tick());
+    if (_remaining == null || _remaining!.inSeconds <= 0) return;
+
+    _endsAt = DateTime.now().add(_remaining!);
+    final gen = ++_countdownGen;
+    _syncFromClock();
+    _runCountdownLoop(gen);
+  }
+
+  Future<void> _runCountdownLoop(int gen) async {
+    while (gen == _countdownGen && _endsAt != null) {
+      await Future.delayed(const Duration(seconds: 1));
+      if (gen != _countdownGen || _endsAt == null) return;
+
+      _syncFromClock();
+
+      if (_remaining != null && _remaining!.inSeconds <= 0) {
+        pauseCountdown();
+        return;
+      }
+    }
   }
 
   void pauseCountdown() {
-    _timer?.cancel();
-    _timer = null;
+    _countdownGen++;
+    if (_endsAt != null) {
+      _syncFromClock();
+      _endsAt = null;
+      _emit();
+    }
   }
 
-  void _tick() {
-    if (_remaining == null) return;
-
-    if (_remaining!.inSeconds <= 0) {
-      _remaining = Duration.zero;
-      _emit();
-      pauseCountdown();
-      return;
-    }
-
+  void _syncFromClock() {
+    if (_endsAt == null) return;
+    final left = _endsAt!.difference(DateTime.now());
+    _remaining = left.isNegative ? Duration.zero : left;
     _emit();
-    _remaining = _remaining! - const Duration(seconds: 1);
   }
 
   void _emit() {
@@ -113,6 +141,7 @@ class AudioService {
   void stopTimer() {
     pauseCountdown();
     _remaining = null;
+    _emit();
   }
 
   Future<void> dispose() async {
